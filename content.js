@@ -6,6 +6,7 @@
   const TOOLTIP_CLASS = 'no-highlight-tooltip';
   const TOOLTIP_VISIBLE_CLASS = 'is-visible';
   const ACTION_BTN_CLASS = 'no-highlight-action-btn';
+  const MARK_EXTRA_INFO = new WeakMap();
   const DISABLED_WORDS_KEY = 'disabledWords';
   const DISABLED_LEVELS_KEY = 'disabledLevels';
   const INCLUDE_MYOWN_KEY = 'includeMyOwn';
@@ -167,6 +168,27 @@
     }
 
     return '';
+  }
+
+  function splitVariants(raw) {
+    if (!raw) return [];
+    return String(raw)
+      .split(/[,;，；/]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function normalizeExamples(rawExamples) {
+    if (!Array.isArray(rawExamples)) return [];
+    return rawExamples
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const no = item.no ? String(item.no).trim() : '';
+        const en = item.en ? String(item.en).trim() : '';
+        if (!no && !en) return null;
+        return { no, en };
+      })
+      .filter(Boolean);
   }
 
   async function loadDisabledWords() {
@@ -414,6 +436,10 @@
     levelTitle.className = 'no-highlight-manager-title';
     levelTitle.textContent = 'Level 开关';
 
+    const pageStatsSummary = document.createElement('div');
+    pageStatsSummary.className = 'no-highlight-manager-empty';
+    pageStatsSummary.style.marginBottom = '8px';
+
     const levelsList = document.createElement('div');
     levelsList.className = 'no-highlight-manager-levels';
 
@@ -432,6 +458,7 @@
     wordsList.className = 'no-highlight-manager-list';
 
     panel.appendChild(levelTitle);
+    panel.appendChild(pageStatsSummary);
     panel.appendChild(levelsList);
     panel.appendChild(sourceTitle);
     panel.appendChild(sourceList);
@@ -445,6 +472,8 @@
       levelsList.innerHTML = '';
       const pageStats = getPageLevelStats();
       const pageTotal = pageStats.total;
+      const summaryParts = allLevels.map((level) => `L${level}:${pageStats.byLevel.get(level) || 0}`);
+      pageStatsSummary.textContent = `页面词语统计: ${pageTotal}${summaryParts.length > 0 ? ` (${summaryParts.join(' / ')})` : ''}`;
 
       allLevels.forEach((level) => {
         const row = document.createElement('label');
@@ -577,7 +606,7 @@
     const index = new Map();
     let size = 0;
 
-    function addPhrase(rawPhrase, meaning, type, inflection, baseWord, ord, level) {
+    function addPhrase(rawPhrase, meaning, type, inflection, baseWord, ord, level, description, examples) {
       const normalized = normalizePhrase(rawPhrase, wordPattern);
       if (!normalized) return;
       if (disabledWords.has(normalized)) return;
@@ -611,6 +640,8 @@
         inflection: inflection || '',
         baseWord: baseWord || '',
         ord: ord || '',
+        description: description || '',
+        examples: Array.isArray(examples) ? examples : [],
         level
       });
       size += 1;
@@ -620,14 +651,24 @@
       const meaning = item.meaning || '';
       const type = item.type || item.pos || '';
       const inflection = normalizeInflection(item.inflection);
+      const description = item.description ? String(item.description).trim() : '';
+      const examples = normalizeExamples(item.examples);
       const baseWord = item.word || '';
       const ord = item.ord || '';
       const level = Number(item.level) || 0;
-      addPhrase(baseWord, meaning, type, inflection, baseWord, ord, level);
+      const baseWordVariants = splitVariants(baseWord);
+
+      if (baseWordVariants.length > 0) {
+        baseWordVariants.forEach((variant) => {
+          addPhrase(variant, meaning, type, inflection, baseWord, ord, level, description, examples);
+        });
+      } else {
+        addPhrase(baseWord, meaning, type, inflection, baseWord, ord, level, description, examples);
+      }
 
       if (inflection) {
-        inflection.split(/[,;，]/).forEach((variant) => {
-          addPhrase(variant, meaning, type, inflection, baseWord, ord, level);
+        splitVariants(inflection).forEach((variant) => {
+          addPhrase(variant, meaning, type, inflection, baseWord, ord, level, description, examples);
         });
       }
     });
@@ -688,6 +729,8 @@
           inflection: entry.inflection || '',
           baseWord: entry.baseWord || '',
           ord: entry.ord || '',
+          description: entry.description || '',
+          examples: entry.examples || [],
           level: entry.level || 0
         });
 
@@ -763,6 +806,10 @@
         mark.dataset.baseWord = match.baseWord || '';
         mark.dataset.ord = match.ord || '';
         mark.dataset.level = String(match.level || '');
+        MARK_EXTRA_INFO.set(mark, {
+          description: match.description || '',
+          examples: Array.isArray(match.examples) ? match.examples : []
+        });
         mark.tabIndex = 0;
         mark.setAttribute('role', 'button');
         mark.setAttribute('aria-label', `查看释义: ${mark.textContent}`);

@@ -61,6 +61,8 @@
   position: absolute;
   z-index: 2147483647;
   max-width: 320px;
+  max-height: 360px;
+  overflow: auto;
   padding: 8px 10px;
   border-radius: 8px;
   background: rgba(33, 33, 33, 0.96);
