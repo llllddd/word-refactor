@@ -205,10 +205,27 @@
 
     function openTooltip(mark) {
       const meaning = mark.dataset.meaning || '未知含义';
+      const type = mark.dataset.type || '';
+      const inflection = mark.dataset.inflection || '';
+      const baseWord = mark.dataset.baseWord || '';
+      const ord = mark.dataset.ord || '';
       const word = mark.textContent || '';
-      const level = mark.dataset.level || '';
+      const firstLine = type ? `${type}, ${meaning}` : meaning;
       activeNormalizedWord = normalizePhrase(word, WORD_PATTERN);
-      textEl.textContent = `${word}${level ? ` (L${level})` : ''}: ${meaning}`;
+      textEl.innerHTML = '';
+      if (baseWord) {
+        const headerLineEl = document.createElement('div');
+        headerLineEl.textContent = `${baseWord}${ord ? ` (${ord})` : ''}`;
+        textEl.appendChild(headerLineEl);
+      }
+      const firstLineEl = document.createElement('div');
+      firstLineEl.textContent = firstLine;
+      textEl.appendChild(firstLineEl);
+      if (inflection) {
+        const secondLineEl = document.createElement('div');
+        secondLineEl.textContent = inflection;
+        textEl.appendChild(secondLineEl);
+      }
       tooltip.classList.add(TOOLTIP_VISIBLE_CLASS);
       tooltip.setAttribute('aria-hidden', 'false');
       disableBtn.disabled = !activeNormalizedWord;
@@ -437,7 +454,7 @@
     const index = new Map();
     let size = 0;
 
-    function addPhrase(rawPhrase, meaning, level) {
+    function addPhrase(rawPhrase, meaning, type, inflection, baseWord, ord, level) {
       const normalized = normalizePhrase(rawPhrase, wordPattern);
       if (!normalized) return;
       if (disabledWords.has(normalized)) return;
@@ -467,6 +484,10 @@
       if (phrases.has(normalized)) return;
       phrases.set(normalized, {
         meaning: meaning || '',
+        type: type || '',
+        inflection: inflection || '',
+        baseWord: baseWord || '',
+        ord: ord || '',
         level
       });
       size += 1;
@@ -474,12 +495,16 @@
 
     data.forEach((item) => {
       const meaning = item.meaning || '';
+      const type = item.type || '';
+      const inflection = item.inflection || '';
+      const baseWord = item.word || '';
+      const ord = item.ord || '';
       const level = Number(item.level) || 0;
-      addPhrase(item.word, meaning, level);
+      addPhrase(item.word, meaning, type, inflection, baseWord, ord, level);
 
       if (item.inflection) {
         item.inflection.split(/[,;，]/).forEach((variant) => {
-          addPhrase(variant, meaning, level);
+          addPhrase(variant, meaning, type, inflection, baseWord, ord, level);
         });
       }
     });
@@ -536,6 +561,10 @@
           start: tokens[i].start,
           end: tokens[i + phraseLength - 1].end,
           meaning: entry.meaning || '',
+          type: entry.type || '',
+          inflection: entry.inflection || '',
+          baseWord: entry.baseWord || '',
+          ord: entry.ord || '',
           level: entry.level || 0
         });
 
@@ -600,6 +629,10 @@
         mark.className = `${HIGHLIGHT_CLASS} no-highlight-level-${match.level}`;
         mark.textContent = text.slice(match.start, match.end);
         mark.dataset.meaning = match.meaning || '';
+        mark.dataset.type = match.type || '';
+        mark.dataset.inflection = match.inflection || '';
+        mark.dataset.baseWord = match.baseWord || '';
+        mark.dataset.ord = match.ord || '';
         mark.dataset.level = String(match.level || '');
         mark.tabIndex = 0;
         mark.setAttribute('role', 'button');
