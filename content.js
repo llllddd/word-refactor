@@ -1,6 +1,6 @@
 (async function() {
   const WORD_PATTERN = /\p{L}+/gu;
-  const MAIN_DICTIONARY_URL = chrome.runtime.getURL('wordsfrequency.json');
+  const MAIN_DICTIONARY_URL = chrome.runtime.getURL('wordsdetail.json');
   const MYOWN_DICTIONARY_URL = chrome.runtime.getURL('myown.json');
   const HIGHLIGHT_CLASS = 'no-highlight-word';
   const TOOLTIP_CLASS = 'no-highlight-tooltip';
@@ -97,7 +97,7 @@
     }
 
     if (!text.trim()) {
-      throw new Error('词库为空: wordsfrequency.json 内容为空或未读取到内容');
+      throw new Error('词库为空: wordsdetail.json 内容为空或未读取到内容');
     }
 
     try {
@@ -147,6 +147,26 @@
     const tokens = cleaned.match(wordPattern);
     if (!tokens || tokens.length === 0) return '';
     return tokens.join(' ');
+  }
+
+  function normalizeInflection(rawInflection) {
+    if (typeof rawInflection === 'string') {
+      return rawInflection.trim();
+    }
+
+    if (Array.isArray(rawInflection)) {
+      return rawInflection.map((item) => String(item).trim()).filter(Boolean).join(', ');
+    }
+
+    if (rawInflection && typeof rawInflection === 'object') {
+      return Object.values(rawInflection)
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .map((item) => String(item).trim())
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    return '';
   }
 
   async function loadDisabledWords() {
@@ -598,15 +618,15 @@
 
     data.forEach((item) => {
       const meaning = item.meaning || '';
-      const type = item.type || '';
-      const inflection = item.inflection || '';
+      const type = item.type || item.pos || '';
+      const inflection = normalizeInflection(item.inflection);
       const baseWord = item.word || '';
       const ord = item.ord || '';
       const level = Number(item.level) || 0;
-      addPhrase(item.word, meaning, type, inflection, baseWord, ord, level);
+      addPhrase(baseWord, meaning, type, inflection, baseWord, ord, level);
 
-      if (item.inflection) {
-        item.inflection.split(/[,;，]/).forEach((variant) => {
+      if (inflection) {
+        inflection.split(/[,;，]/).forEach((variant) => {
           addPhrase(variant, meaning, type, inflection, baseWord, ord, level);
         });
       }
