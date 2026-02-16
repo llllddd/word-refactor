@@ -669,6 +669,12 @@
       if (inflection) {
         splitVariants(inflection).forEach((variant) => {
           addPhrase(variant, meaning, type, inflection, baseWord, ord, level, description, examples);
+          const normalizedVariant = normalizePhrase(variant, wordPattern);
+          if (normalizedVariant.includes(' ')) {
+            const tokens = normalizedVariant.split(' ');
+            const tailToken = tokens[tokens.length - 1];
+            addPhrase(tailToken, meaning, type, inflection, baseWord, ord, level, description, examples);
+          }
         });
       }
     });
