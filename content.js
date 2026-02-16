@@ -1,12 +1,14 @@
 (async function() {
   const WORD_PATTERN = /\p{L}+/gu;
-  const url = chrome.runtime.getURL('wordsfrequency.json');
+  const MAIN_DICTIONARY_URL = chrome.runtime.getURL('wordsfrequency.json');
+  const MYOWN_DICTIONARY_URL = chrome.runtime.getURL('myown.json');
   const HIGHLIGHT_CLASS = 'no-highlight-word';
   const TOOLTIP_CLASS = 'no-highlight-tooltip';
   const TOOLTIP_VISIBLE_CLASS = 'is-visible';
   const ACTION_BTN_CLASS = 'no-highlight-action-btn';
   const DISABLED_WORDS_KEY = 'disabledWords';
   const DISABLED_LEVELS_KEY = 'disabledLevels';
+  const INCLUDE_MYOWN_KEY = 'includeMyOwn';
   const LEVEL_COLORS = {
     500: '#26a69a',
     1500: '#42a5f5',
@@ -15,18 +17,33 @@
   };
 
   try {
-    const [disabledWords, disabledLevels] = await Promise.all([
+    const [disabledWords, disabledLevels, includeMyOwnDefault] = await Promise.all([
       loadDisabledWords(),
-      loadDisabledLevels()
+      loadDisabledLevels(),
+      loadIncludeMyOwn()
     ]);
-    const data = await loadDictionaryWithRetry(url);
-    const allLevels = getAllLevels(data);
-    const levelCounts = getLevelCounts(data);
-    let matcher = buildMatcher(data, WORD_PATTERN, disabledWords, disabledLevels);
+    const [mainData, myOwnData] = await Promise.all([
+      loadDictionaryWithRetry(MAIN_DICTIONARY_URL),
+      loadDictionaryOptional(MYOWN_DICTIONARY_URL)
+    ]);
+    let includeMyOwn = includeMyOwnDefault;
+    const allLevels = getAllLevels(mainData);
+    const levelCounts = getLevelCounts(mainData);
+    let matcher = buildMatcher(
+      mergeDictionaryData(mainData, myOwnData, includeMyOwn),
+      WORD_PATTERN,
+      disabledWords,
+      disabledLevels
+    );
 
     const refreshHighlights = () => {
       clearAllHighlights();
-      matcher = buildMatcher(data, WORD_PATTERN, disabledWords, disabledLevels);
+      matcher = buildMatcher(
+        mergeDictionaryData(mainData, myOwnData, includeMyOwn),
+        WORD_PATTERN,
+        disabledWords,
+        disabledLevels
+      );
       highlightText(document.body, matcher, WORD_PATTERN);
       renderRestorePanel();
     };
@@ -35,6 +52,7 @@
       disabledWords,
       disabledLevels,
       allLevels,
+      includeMyOwn,
       levelCounts,
       async (normalizedWord) => {
         disabledWords.delete(normalizedWord);
@@ -48,6 +66,11 @@
           disabledLevels.add(level);
         }
         await saveDisabledLevels(disabledLevels);
+        refreshHighlights();
+      },
+      async (enabled) => {
+        includeMyOwn = enabled;
+        await saveIncludeMyOwn(enabled);
         refreshHighlights();
       }
     );
@@ -85,6 +108,20 @@
       const preview = text.slice(0, 120).replace(/\s+/g, ' ');
       throw new Error(`词库 JSON 解析失败: ${error.message}; 长度=${text.length}; 片段="${preview}"`);
     }
+  }
+
+  async function loadDictionaryOptional(resourceUrl) {
+    try {
+      return await loadDictionaryWithRetry(resourceUrl);
+    } catch (error) {
+      console.warn('可选词库加载失败，已忽略:', error);
+      return [];
+    }
+  }
+
+  function mergeDictionaryData(mainData, myOwnData, includeMyOwn) {
+    if (!includeMyOwn) return mainData;
+    return [...mainData, ...myOwnData];
   }
 
   async function loadDictionaryWithRetry(resourceUrl) {
@@ -145,6 +182,23 @@
   async function saveDisabledLevels(disabledLevels) {
     await chrome.storage.local.set({
       [DISABLED_LEVELS_KEY]: [...disabledLevels]
+    });
+  }
+
+  async function loadIncludeMyOwn() {
+    try {
+      const result = await chrome.storage.local.get([INCLUDE_MYOWN_KEY]);
+      const value = result[INCLUDE_MYOWN_KEY];
+      return typeof value === 'boolean' ? value : true;
+    } catch (error) {
+      console.warn('读取自定义词库开关失败，已回退为开启:', error);
+      return true;
+    }
+  }
+
+  async function saveIncludeMyOwn(enabled) {
+    await chrome.storage.local.set({
+      [INCLUDE_MYOWN_KEY]: Boolean(enabled)
     });
   }
 
@@ -310,9 +364,11 @@
     disabledWords,
     disabledLevels,
     allLevels,
+    includeMyOwn,
     levelCounts,
     onRestoreWord,
-    onLevelToggle
+    onLevelToggle,
+    onMyOwnToggle
   ) {
     const container = document.createElement('div');
     container.className = 'no-highlight-manager';
@@ -338,6 +394,13 @@
     const levelsList = document.createElement('div');
     levelsList.className = 'no-highlight-manager-levels';
 
+    const sourceTitle = document.createElement('div');
+    sourceTitle.className = 'no-highlight-manager-title';
+    sourceTitle.textContent = '词库开关';
+
+    const sourceList = document.createElement('div');
+    sourceList.className = 'no-highlight-manager-levels';
+
     const wordTitle = document.createElement('div');
     wordTitle.className = 'no-highlight-manager-title';
     wordTitle.textContent = '已取消高亮';
@@ -347,6 +410,8 @@
 
     panel.appendChild(levelTitle);
     panel.appendChild(levelsList);
+    panel.appendChild(sourceTitle);
+    panel.appendChild(sourceList);
     panel.appendChild(wordTitle);
     panel.appendChild(wordsList);
     container.appendChild(trigger);
@@ -421,8 +486,39 @@
       });
     }
 
+    function renderSources() {
+      sourceList.innerHTML = '';
+      const row = document.createElement('label');
+      row.className = 'no-highlight-manager-level-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = includeMyOwn;
+      checkbox.addEventListener('change', async () => {
+        checkbox.disabled = true;
+        await onMyOwnToggle(checkbox.checked);
+        includeMyOwn = checkbox.checked;
+        checkbox.disabled = false;
+        renderSources();
+      });
+
+      const swatch = document.createElement('span');
+      swatch.className = 'no-highlight-manager-level-swatch';
+      swatch.style.background = '#ab47bc';
+
+      const label = document.createElement('span');
+      label.className = 'no-highlight-manager-level-text';
+      label.textContent = '我的单词本';
+
+      row.appendChild(checkbox);
+      row.appendChild(swatch);
+      row.appendChild(label);
+      sourceList.appendChild(row);
+    }
+
     function renderPanel() {
       renderLevels();
+      renderSources();
       renderWords();
     }
 

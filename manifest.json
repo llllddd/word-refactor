@@ -13,7 +13,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["wordsfrequency.json"],
+      "resources": ["wordsfrequency.json", "myown.json"],
       "matches": ["<all_urls>"]
     }
   ]
