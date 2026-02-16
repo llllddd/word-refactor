@@ -29,6 +29,7 @@
     let includeMyOwn = includeMyOwnDefault;
     const allLevels = getAllLevels(mainData);
     const levelCounts = getLevelCounts(mainData);
+    let pageLevelStats = createEmptyPageLevelStats();
     let matcher = buildMatcher(
       mergeDictionaryData(mainData, myOwnData, includeMyOwn),
       WORD_PATTERN,
@@ -44,7 +45,7 @@
         disabledWords,
         disabledLevels
       );
-      highlightText(document.body, matcher, WORD_PATTERN);
+      pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN);
       renderRestorePanel();
     };
 
@@ -54,6 +55,7 @@
       allLevels,
       includeMyOwn,
       levelCounts,
+      () => pageLevelStats,
       async (normalizedWord) => {
         disabledWords.delete(normalizedWord);
         await saveDisabledWords(disabledWords);
@@ -81,7 +83,7 @@
       refreshHighlights();
     });
 
-    highlightText(document.body, matcher, WORD_PATTERN);
+    pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN);
   } catch (error) {
     console.error('挪威语插件加载失败:', error);
   }
@@ -366,6 +368,7 @@
     allLevels,
     includeMyOwn,
     levelCounts,
+    getPageLevelStats,
     onRestoreWord,
     onLevelToggle,
     onMyOwnToggle
@@ -420,6 +423,8 @@
 
     function renderLevels() {
       levelsList.innerHTML = '';
+      const pageStats = getPageLevelStats();
+      const pageTotal = pageStats.total;
 
       allLevels.forEach((level) => {
         const row = document.createElement('label');
@@ -442,7 +447,9 @@
         const label = document.createElement('span');
         label.className = 'no-highlight-manager-level-text';
         const count = levelCounts.get(level) || 0;
-        label.textContent = `L${level} (${count})`;
+        const pageCount = pageStats.byLevel.get(level) || 0;
+        const ratio = pageTotal > 0 ? ((pageCount / pageTotal) * 100).toFixed(1) : '0.0';
+        label.textContent = `L${level} (${count}) | 页面 ${ratio}% (${pageCount}/${pageTotal})`;
 
         row.appendChild(checkbox);
         row.appendChild(swatch);
@@ -701,6 +708,8 @@
     });
 
     const jobs = [];
+    const pageLevelCounts = new Map();
+    let pageMatchedTotal = 0;
 
     while (walker.nextNode()) {
       const node = walker.currentNode;
@@ -719,6 +728,10 @@
       let lastIndex = 0;
 
       matches.forEach((match) => {
+        if (Number.isFinite(match.level) && match.level > 0) {
+          pageLevelCounts.set(match.level, (pageLevelCounts.get(match.level) || 0) + 1);
+          pageMatchedTotal += 1;
+        }
         fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.start)));
 
         const mark = document.createElement('mark');
@@ -741,6 +754,11 @@
       fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
       parent.replaceChild(fragment, node);
     });
+
+    return {
+      byLevel: pageLevelCounts,
+      total: pageMatchedTotal
+    };
   }
 
   function clearAllHighlights() {
@@ -765,6 +783,13 @@
       map.set(level, (map.get(level) || 0) + 1);
     });
     return map;
+  }
+
+  function createEmptyPageLevelStats() {
+    return {
+      byLevel: new Map(),
+      total: 0
+    };
   }
 
   function getLevelColor(level) {
