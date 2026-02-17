@@ -86,6 +86,11 @@
   margin-bottom: 8px;
 }
 
+.no-highlight-tooltip-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .no-highlight-tooltip-disable {
   border: 0;
   border-radius: 6px;
@@ -104,6 +109,32 @@
 .no-highlight-tooltip-disable:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.no-highlight-tooltip-mark {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1;
+  background: #90caf9;
+  color: #0d2d47;
+  cursor: pointer;
+}
+
+.no-highlight-tooltip-mark:hover {
+  background: #64b5f6;
+}
+
+.no-highlight-tooltip-mark:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.no-highlight-inline-meaning {
+  margin-left: 2px;
+  font-size: 0.9em;
+  color: #607d8b;
 }
 
 .no-highlight-action-btn {

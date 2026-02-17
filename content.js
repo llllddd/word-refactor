@@ -10,6 +10,7 @@
   const DISABLED_WORDS_KEY = 'disabledWords';
   const DISABLED_LEVELS_KEY = 'disabledLevels';
   const INCLUDE_MYOWN_KEY = 'includeMyOwn';
+  const NEW_WORDS_KEY = 'newWords';
   const LEVEL_COLORS = {
     500: '#26a69a',
     1500: '#42a5f5',
@@ -18,10 +19,11 @@
   };
 
   try {
-    const [disabledWords, disabledLevels, includeMyOwnDefault] = await Promise.all([
+    const [disabledWords, disabledLevels, includeMyOwnDefault, newWords] = await Promise.all([
       loadDisabledWords(),
       loadDisabledLevels(),
-      loadIncludeMyOwn()
+      loadIncludeMyOwn(),
+      loadNewWords()
     ]);
     const [mainData, myOwnData] = await Promise.all([
       loadDictionaryWithRetry(MAIN_DICTIONARY_URL),
@@ -46,7 +48,7 @@
         disabledWords,
         disabledLevels
       );
-      pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN);
+      pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN, newWords);
       renderRestorePanel();
     };
 
@@ -78,13 +80,26 @@
       }
     );
 
-    setupTooltipInteractions(disabledWords, async (normalizedWord) => {
-      disabledWords.add(normalizedWord);
-      await saveDisabledWords(disabledWords);
-      refreshHighlights();
-    });
+    setupTooltipInteractions(
+      disabledWords,
+      newWords,
+      async (normalizedWord) => {
+        disabledWords.add(normalizedWord);
+        await saveDisabledWords(disabledWords);
+        refreshHighlights();
+      },
+      async (normalizedWord, isMarked) => {
+        if (isMarked) {
+          newWords.add(normalizedWord);
+        } else {
+          newWords.delete(normalizedWord);
+        }
+        await saveNewWords(newWords);
+        refreshHighlights();
+      }
+    );
 
-    pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN);
+    pageLevelStats = highlightText(document.body, matcher, WORD_PATTERN, newWords);
   } catch (error) {
     console.error('挪威语插件加载失败:', error);
   }
@@ -229,6 +244,23 @@
     });
   }
 
+  async function loadNewWords() {
+    try {
+      const result = await chrome.storage.local.get([NEW_WORDS_KEY]);
+      const list = Array.isArray(result[NEW_WORDS_KEY]) ? result[NEW_WORDS_KEY] : [];
+      return new Set(list.map((item) => normalizePhrase(item, WORD_PATTERN)).filter(Boolean));
+    } catch (error) {
+      console.warn('读取生词列表失败，已回退为空列表:', error);
+      return new Set();
+    }
+  }
+
+  async function saveNewWords(newWords) {
+    await chrome.storage.local.set({
+      [NEW_WORDS_KEY]: [...newWords]
+    });
+  }
+
   async function loadIncludeMyOwn() {
     try {
       const result = await chrome.storage.local.get([INCLUDE_MYOWN_KEY]);
@@ -246,7 +278,7 @@
     });
   }
 
-  function setupTooltipInteractions(disabledWords, onDisableWord) {
+  function setupTooltipInteractions(disabledWords, newWords, onDisableWord, onToggleNewWord) {
     const tooltip = document.createElement('div');
     tooltip.className = TOOLTIP_CLASS;
     tooltip.setAttribute('role', 'dialog');
@@ -257,8 +289,16 @@
     disableBtn.className = `${TOOLTIP_CLASS}-disable`;
     disableBtn.type = 'button';
     disableBtn.textContent = '取消高亮此词';
+    const markNewWordBtn = document.createElement('button');
+    markNewWordBtn.className = `${TOOLTIP_CLASS}-mark`;
+    markNewWordBtn.type = 'button';
+    markNewWordBtn.textContent = '标记为生词';
+    const actions = document.createElement('div');
+    actions.className = `${TOOLTIP_CLASS}-actions`;
+    actions.appendChild(disableBtn);
+    actions.appendChild(markNewWordBtn);
     tooltip.appendChild(textEl);
-    tooltip.appendChild(disableBtn);
+    tooltip.appendChild(actions);
     document.body.appendChild(tooltip);
 
     const actionBtn = document.createElement('button');
@@ -327,6 +367,8 @@
       tooltip.classList.add(TOOLTIP_VISIBLE_CLASS);
       tooltip.setAttribute('aria-hidden', 'false');
       disableBtn.disabled = !activeNormalizedWord;
+      markNewWordBtn.disabled = !activeNormalizedWord;
+      markNewWordBtn.textContent = newWords.has(activeNormalizedWord) ? '取消生词标记' : '标记为生词';
 
       if (activeMark && activeMark !== mark) {
         activeMark.classList.remove('is-active');
@@ -381,6 +423,14 @@
       if (!activeNormalizedWord) return;
       disabledWords.add(activeNormalizedWord);
       await onDisableWord(activeNormalizedWord);
+      closeTooltip();
+      hideActionButton();
+    });
+
+    markNewWordBtn.addEventListener('click', async () => {
+      if (!activeNormalizedWord) return;
+      const isMarked = newWords.has(activeNormalizedWord);
+      await onToggleNewWord(activeNormalizedWord, !isMarked);
       closeTooltip();
       hideActionButton();
     });
@@ -753,7 +803,7 @@
     return matches;
   }
 
-  function highlightText(root, matcher, wordPattern) {
+  function highlightText(root, matcher, wordPattern, newWords) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement;
@@ -821,6 +871,13 @@
         mark.setAttribute('aria-label', `查看释义: ${mark.textContent}`);
 
         fragment.appendChild(mark);
+        const normalizedWord = normalizePhrase(mark.textContent || '', wordPattern);
+        if (normalizedWord && newWords.has(normalizedWord) && match.meaning) {
+          const inlineMeaning = document.createElement('span');
+          inlineMeaning.className = 'no-highlight-inline-meaning';
+          inlineMeaning.textContent = `（${match.meaning}）`;
+          fragment.appendChild(inlineMeaning);
+        }
         lastIndex = match.end;
       });
 
@@ -835,6 +892,9 @@
   }
 
   function clearAllHighlights() {
+    document.querySelectorAll('.no-highlight-inline-meaning').forEach((el) => {
+      el.remove();
+    });
     document.querySelectorAll(`mark.${HIGHLIGHT_CLASS}`).forEach((mark) => {
       mark.replaceWith(document.createTextNode(mark.textContent || ''));
     });
