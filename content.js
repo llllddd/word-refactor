@@ -54,6 +54,7 @@
 
     const renderRestorePanel = setupRestorePanel(
       disabledWords,
+      newWords,
       disabledLevels,
       allLevels,
       includeMyOwn,
@@ -76,6 +77,11 @@
       async (enabled) => {
         includeMyOwn = enabled;
         await saveIncludeMyOwn(enabled);
+        refreshHighlights();
+      },
+      async (normalizedWord) => {
+        newWords.delete(normalizedWord);
+        await saveNewWords(newWords);
         refreshHighlights();
       }
     );
@@ -456,6 +462,7 @@
 
   function setupRestorePanel(
     disabledWords,
+    newWords,
     disabledLevels,
     allLevels,
     includeMyOwn,
@@ -463,7 +470,8 @@
     getPageLevelStats,
     onRestoreWord,
     onLevelToggle,
-    onMyOwnToggle
+    onMyOwnToggle,
+    onRemoveNewWord
   ) {
     const container = document.createElement('div');
     container.className = 'no-highlight-manager';
@@ -507,6 +515,13 @@
     const wordsList = document.createElement('div');
     wordsList.className = 'no-highlight-manager-list';
 
+    const newWordTitle = document.createElement('div');
+    newWordTitle.className = 'no-highlight-manager-title';
+    newWordTitle.textContent = '生词本';
+
+    const newWordsList = document.createElement('div');
+    newWordsList.className = 'no-highlight-manager-list';
+
     panel.appendChild(levelTitle);
     panel.appendChild(pageStatsSummary);
     panel.appendChild(levelsList);
@@ -514,6 +529,8 @@
     panel.appendChild(sourceList);
     panel.appendChild(wordTitle);
     panel.appendChild(wordsList);
+    panel.appendChild(newWordTitle);
+    panel.appendChild(newWordsList);
     container.appendChild(trigger);
     container.appendChild(panel);
     document.body.appendChild(container);
@@ -522,6 +539,7 @@
       levelsList.innerHTML = '';
       const pageStats = getPageLevelStats();
       const pageTotal = pageStats.total;
+      trigger.textContent = `高亮设置 (${pageTotal})`;
       const summaryParts = allLevels.map((level) => `L${level}:${pageStats.byLevel.get(level) || 0}`);
       pageStatsSummary.textContent = `页面词语统计: ${pageTotal}${summaryParts.length > 0 ? ` (${summaryParts.join(' / ')})` : ''}`;
 
@@ -622,10 +640,46 @@
       sourceList.appendChild(row);
     }
 
+    function renderNewWords() {
+      newWordsList.innerHTML = '';
+      const words = [...newWords].sort((a, b) => a.localeCompare(b));
+
+      if (words.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'no-highlight-manager-empty';
+        empty.textContent = '暂无生词';
+        newWordsList.appendChild(empty);
+        return;
+      }
+
+      words.forEach((word) => {
+        const row = document.createElement('div');
+        row.className = 'no-highlight-manager-item';
+
+        const wordEl = document.createElement('span');
+        wordEl.className = 'no-highlight-manager-word';
+        wordEl.textContent = word;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'no-highlight-manager-restore';
+        removeBtn.textContent = '移除';
+        removeBtn.addEventListener('click', async () => {
+          await onRemoveNewWord(word);
+          renderNewWords();
+        });
+
+        row.appendChild(wordEl);
+        row.appendChild(removeBtn);
+        newWordsList.appendChild(row);
+      });
+    }
+
     function renderPanel() {
       renderLevels();
       renderSources();
       renderWords();
+      renderNewWords();
     }
 
     trigger.addEventListener('click', () => {
