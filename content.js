@@ -398,6 +398,15 @@
       }
     });
 
+    document.addEventListener('mouseout', (event) => {
+      if (!activeMark) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const fromMark = target.closest(`mark.${HIGHLIGHT_CLASS}`);
+      if (!fromMark || fromMark !== activeMark) return;
+      closeTooltip();
+    });
+
     document.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -929,7 +938,7 @@
         if (normalizedWord && newWords.has(normalizedWord) && match.meaning) {
           const inlineMeaning = document.createElement('span');
           inlineMeaning.className = 'no-highlight-inline-meaning';
-          inlineMeaning.textContent = `（${match.meaning}）`;
+          inlineMeaning.textContent = ` ${match.meaning}`;
           fragment.appendChild(inlineMeaning);
         }
         lastIndex = match.end;
